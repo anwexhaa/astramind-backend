@@ -1,48 +1,120 @@
 // routes/reportRoute.js
 import express from "express";
-import fs from "fs";
-import path from "path";
+import Report from "../models/report.js";
 
 const router = express.Router();
-const dataPath = path.resolve("./data/reports.json");
 
-// ✅ Ensure data folder exists
-if (!fs.existsSync("./data")) fs.mkdirSync("./data");
-if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, "[]");
-
-// ✅ GET all saved reports
-router.get("/", (req, res) => {
+// ✅ GET all saved reports (newest first, with pagination)
+router.get("/", async (req, res) => {
   try {
-    const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-    res.json(data);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const reports = await Report.find()
+      .sort({ created_at: -1 }) // Newest first
+      .skip(skip)
+      .limit(limit)
+      .select("-__v"); // Exclude version field
+
+    const totalReports = await Report.countDocuments();
+    const totalPages = Math.ceil(totalReports / limit);
+
+    res.json({
+      success: true,
+      reports,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalReports,
+        reportsPerPage: limit,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: "Failed to read saved reports" });
+    console.error("❌ Error fetching reports:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to fetch reports" 
+    });
   }
 });
 
-// ✅ POST new report
-router.post("/", (req, res) => {
+// ✅ GET single report by ID
+router.get("/:id", async (req, res) => {
   try {
-    const { companyName, analysis } = req.body;
-    if (!companyName || !analysis) {
-      return res.status(400).json({ error: "Missing companyName or analysis" });
+    const report = await Report.findById(req.params.id).select("-__v");
+    
+    if (!report) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Report not found" 
+      });
     }
 
-    const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-    const newEntry = {
-      id: Date.now().toString(),
-      companyName,
-      analysis,
-      savedAt: new Date().toISOString(),
-    };
-
-    data.push(newEntry);
-    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-
-    res.json({ message: "Report saved successfully", report: newEntry });
+    res.json({ success: true, report });
   } catch (err) {
-    console.error("Error saving report:", err);
-    res.status(500).json({ error: "Failed to save report" });
+    console.error("❌ Error fetching report:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Invalid report ID or server error" 
+    });
+  }
+});
+
+// ✅ DELETE report by ID
+router.delete("/:id", async (req, res) => {
+  try {
+    const report = await Report.findByIdAndDelete(req.params.id);
+    
+    if (!report) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Report not found" 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Report deleted successfully",
+      deletedId: req.params.id 
+    });
+  } catch (err) {
+    console.error("❌ Error deleting report:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to delete report" 
+    });
+  }
+});
+
+// ✅ POST new report (manual save - kept for backward compatibility)
+router.post("/", async (req, res) => {
+  try {
+    const reportData = req.body;
+
+    // Validate required fields
+    if (!reportData.summary) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Summary is required" 
+      });
+    }
+
+    const newReport = new Report(reportData);
+    await newReport.save();
+
+    res.json({ 
+      success: true, 
+      message: "Report saved successfully", 
+      report: newReport 
+    });
+  } catch (err) {
+    console.error("❌ Error saving report:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to save report",
+      details: err.message 
+    });
   }
 });
 
