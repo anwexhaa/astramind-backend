@@ -1,8 +1,5 @@
-// routes/pluginRoute.js
 import express from "express";
 import fetch from "node-fetch";
-
-console.log("🔑 API_NINJAS_KEY loaded:", !!process.env.API_NINJAS_KEY);
 
 const router = express.Router();
 
@@ -21,6 +18,20 @@ router.get("/stock/:symbol", async (req, res) => {
   } catch (err) {
     console.error("Plugin Error:", err);
     res.status(500).json({ success: false, error: "Plugin request failed" });
+  }
+});
+
+router.get("/test/:symbol", async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    const response = await fetch(`https://api.api-ninjas.com/v1/stockprice?ticker=${symbol}`, {
+      headers: { "X-Api-Key": process.env.API_NINJAS_KEY }
+    });
+    const data = await response.json();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Test route error:", error);
+    res.status(500).json({ success: false, error: "Test route failed" });
   }
 });
 
