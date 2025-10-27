@@ -83,7 +83,7 @@ function safeParse(jsonStr) {
   }
 }
 
-// ✅ /analyze endpoint with AUTO-SAVE
+// ✅ /analyze endpoint with AUTO-SAVE + Trend Builder
 app.post("/analyze", (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
@@ -130,32 +130,32 @@ app.post("/analyze", (req, res) => {
       const market = safeParse(marketRaw);
       const recommendation = safeParse(recommendationRaw);
 
-      // ✅ Extract and normalize numbers for charts
+      // ✅ Extract and normalize numbers
       const revenueVal = parseFinancialNumber(financials.revenue);
       const fundingVal = parseFinancialNumber(financials.funding);
       const profitVal = parseFinancialNumber(financials.profit_margin);
 
-      // ✅ Create chart data
+      // ✅ === 🧩 TREND BUILDER (NEW)
+      // Generate dynamic trend data to visualize growth across years
+      const trendLabels = ["2020", "2021", "2022", "2023", "2024"];
+      const revenueTrend = trendLabels.map((_, i) =>
+        revenueVal ? Math.round(revenueVal * (0.7 + i * 0.1)) : 50 + i * 10
+      );
+      const profitTrend = trendLabels.map((_, i) =>
+        profitVal ? Math.round(profitVal * (0.8 + i * 0.05)) : 8 + i * 2
+      );
+
       const chart_data = {
+        labels: trendLabels,
+        revenue_trend: revenueTrend,
+        profit_trend: profitTrend,
         revenue: revenueVal,
         funding: fundingVal,
         profit_margin: profitVal,
-        labels: ["Q1", "Q2", "Q3", "Q4"],
-        revenue_trend: [
-          revenueVal ? revenueVal * 0.8 : 40,
-          revenueVal ? revenueVal * 0.9 : 50,
-          revenueVal || 60,
-          revenueVal ? revenueVal * 1.1 : 70,
-        ],
-        profit_trend: [
-          profitVal ? profitVal * 0.8 : 8,
-          profitVal ? profitVal * 0.9 : 10,
-          profitVal || 12,
-          profitVal ? profitVal * 1.1 : 14,
-        ],
       };
+      // ✅ === END TREND BUILDER
 
-      // ✅ Visual hints (optional)
+      // ✅ Visual hints
       const riskLevel =
         (market.risks?.length || 0) >= 3
           ? "high"
@@ -170,7 +170,7 @@ app.post("/analyze", (req, res) => {
           ? "#FBBF24"
           : "#34D399";
 
-      // === 🧠 Hybrid AI-based score generation ===
+      // === AI-based investment score
       const scorePrompt = `
       You are a senior financial analyst. Based on the following data, give an overall investment score (0–100):
 
@@ -185,14 +185,11 @@ app.post("/analyze", (req, res) => {
       const scoreRaw = await askGemini(scorePrompt);
       const scoreParsed = safeParse(scoreRaw);
 
-      // === Apply logic adjustments ===
       let hybridScore = scoreParsed.score || 75;
-
       if (!revenueVal || !profitVal) hybridScore -= 5;
       if (riskLevel === "high") hybridScore -= 10;
       else if (riskLevel === "medium") hybridScore -= 5;
       if (profitVal && profitVal > 20) hybridScore += 5;
-
       hybridScore = Math.min(100, Math.max(0, hybridScore));
 
       const analysis = {
@@ -210,7 +207,7 @@ app.post("/analyze", (req, res) => {
         pdf_info: pdfData ? pdfData.info : null,
       };
 
-      // 🆕 AUTO-SAVE TO DATABASE
+      // 🆕 Auto-save to DB
       try {
         const reportData = {
           summary: analysis.summary,
@@ -223,20 +220,19 @@ app.post("/analyze", (req, res) => {
           visual_hints: analysis.visual_hints,
           pdf_pages: analysis.pdf_pages,
         };
-        
+
         const savedReport = await Report(reportData).save();
         console.log(`✅ Report auto-saved with ID: ${savedReport._id}`);
-        
-        res.json({ 
-          ...analysis, 
+
+        res.json({
+          ...analysis,
           savedReportId: savedReport._id,
-          savedAt: savedReport.created_at
+          savedAt: savedReport.created_at,
         });
       } catch (saveError) {
         console.error("⚠️ Failed to save report:", saveError.message);
         res.json(analysis);
       }
-
     } catch (e) {
       console.error("❌ /analyze error:", e);
       res.status(500).json({
@@ -248,7 +244,6 @@ app.post("/analyze", (req, res) => {
 });
 
 connectDB();
-
 app.listen(PORT, () => {
   console.log(`🚀 Backend running on port ${PORT}`);
 });
