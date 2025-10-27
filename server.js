@@ -9,6 +9,7 @@ import reportRoute from "./routes/reportRoute.js";
 import { connectDB } from "./config/db.js";
 import Report from "./models/report.js";
 import chatRoute from "./routes/chatRoute.js";
+import pluginRoute from "./routes/pluginRoute.js";
 
 
 const require = createRequire(import.meta.url);
@@ -29,6 +30,7 @@ app.use(express.json());
 app.use("/api/visualize", visualizeRoute);
 app.use("/api/reports", reportRoute);
 app.use("/api/chat", chatRoute);
+app.use("/plugin", pluginRoute);
 
 // ✅ Initialize Gemini safely
 let model;
