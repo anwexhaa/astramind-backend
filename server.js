@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import visualizeRoute from "./routes/visualizeRoute.js";
 import reportRoute from "./routes/reportRoute.js";
 import { connectDB } from "./config/db.js";
-
+import Report from "./models/report.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -26,7 +26,6 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/visualize", visualizeRoute);
 app.use("/api/reports", reportRoute);
-
 
 // ✅ Initialize Gemini safely
 let model;
@@ -84,7 +83,7 @@ function safeParse(jsonStr) {
   }
 }
 
-// ✅ /analyze endpoint (UNCHANGED)
+// ✅ /analyze endpoint with AUTO-SAVE
 app.post("/analyze", (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
@@ -211,7 +210,33 @@ app.post("/analyze", (req, res) => {
         pdf_info: pdfData ? pdfData.info : null,
       };
 
-      res.json(analysis);
+      // 🆕 AUTO-SAVE TO DATABASE
+      try {
+        const reportData = {
+          summary: analysis.summary,
+          financial_highlights: analysis.financial_highlights,
+          market_analysis: analysis.market_analysis,
+          risks: analysis.risks,
+          investment_recommendation: analysis.investment_recommendation,
+          overall_score: analysis.overall_score,
+          chart_data: analysis.chart_data,
+          visual_hints: analysis.visual_hints,
+          pdf_pages: analysis.pdf_pages,
+        };
+        
+        const savedReport = await Report(reportData).save();
+        console.log(`✅ Report auto-saved with ID: ${savedReport._id}`);
+        
+        res.json({ 
+          ...analysis, 
+          savedReportId: savedReport._id,
+          savedAt: savedReport.created_at
+        });
+      } catch (saveError) {
+        console.error("⚠️ Failed to save report:", saveError.message);
+        res.json(analysis);
+      }
+
     } catch (e) {
       console.error("❌ /analyze error:", e);
       res.status(500).json({
