@@ -10,17 +10,43 @@ const router = express.Router();
 
 // ✅ Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-// ✅ POST /api/chat
 router.post("/", async (req, res) => {
   try {
     const { query, reportIds } = req.body;
+    if (!query) return res.status(400).json({ error: "Query text is required." });
 
-    if (!query)
-      return res.status(400).json({ error: "Query text is required." });
+    // 🧠 Detect if query is financial or casual
+    const financeKeywords = [
+      "stock", "market", "investment", "report", "revenue", "profit",
+      "financial", "trend", "valuation", "risk", "growth", "company", "performance"
+    ];
+    const isFinanceQuery = financeKeywords.some((kw) =>
+      query.toLowerCase().includes(kw)
+    );
 
-    // 🧠 Fetch selected reports (or all if none specified)
+    // If it's casual chat, skip report context
+    if (!isFinanceQuery) {
+      const casualPrompt = `
+You are AstraMind, a friendly and intelligent AI built to assist with financial insights,
+but you can also chat casually like a human. 
+If the user’s question isn’t financial, just respond casually, naturally, and warmly.
+
+User: "${query}"
+`;
+
+      const casualResult = await model.generateContent(casualPrompt);
+      const casualText = casualResult.response.text();
+
+      return res.json({
+        success: true,
+        mode: "casual",
+        answer: casualText.trim(),
+      });
+    }
+
+    // 🏦 Otherwise, go financial analysis mode
     let reports;
     if (Array.isArray(reportIds) && reportIds.length > 0) {
       reports = await Report.find({ _id: { $in: reportIds } });
@@ -31,7 +57,6 @@ router.post("/", async (req, res) => {
     if (reports.length === 0)
       return res.status(404).json({ error: "No reports found to analyze." });
 
-    // Format data for AI prompt
     const context = reports
       .map(
         (r, i) => `
@@ -46,23 +71,22 @@ Overall Score: ${r.overall_score}
       )
       .join("\n");
 
-    const prompt = `
+    const financePrompt = `
 You are a financial analysis assistant. 
 Given the following saved reports, answer the user's question clearly and concisely.
-Be objective, structured, and analytical.
+Be structured and analytical — use bullet points if needed.
 
 ${context}
 
 User question: "${query}"
 
-Return your answer as JSON: 
+Return your answer as JSON:
 {"response": "<your analysis here>"}
 `;
 
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent(financePrompt);
     const text = result.response.text();
 
-    // Extract JSON safely
     let parsed;
     try {
       parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0]);
@@ -72,6 +96,7 @@ Return your answer as JSON:
 
     res.json({
       success: true,
+      mode: "financial",
       question: query,
       answer: parsed.response || parsed,
       comparedReports: reports.length,

@@ -1,4 +1,3 @@
-// routes/reportRoute.js
 import express from "express";
 import Report from "../models/report.js";
 
@@ -32,9 +31,9 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Error fetching reports:", err);
-    res.status(500).json({ 
-      success: false, 
-      error: "Failed to fetch reports" 
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch reports",
     });
   }
 });
@@ -43,20 +42,20 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const report = await Report.findById(req.params.id).select("-__v");
-    
+
     if (!report) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Report not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Report not found",
       });
     }
 
     res.json({ success: true, report });
   } catch (err) {
     console.error("❌ Error fetching report:", err);
-    res.status(500).json({ 
-      success: false, 
-      error: "Invalid report ID or server error" 
+    res.status(500).json({
+      success: false,
+      error: "Invalid report ID or server error",
     });
   }
 });
@@ -65,24 +64,24 @@ router.get("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const report = await Report.findByIdAndDelete(req.params.id);
-    
+
     if (!report) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Report not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Report not found",
       });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Report deleted successfully",
-      deletedId: req.params.id 
+      deletedId: req.params.id,
     });
   } catch (err) {
     console.error("❌ Error deleting report:", err);
-    res.status(500).json({ 
-      success: false, 
-      error: "Failed to delete report" 
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete report",
     });
   }
 });
@@ -92,28 +91,49 @@ router.post("/", async (req, res) => {
   try {
     const reportData = req.body;
 
-    // Validate required fields
+    // 2️⃣ Don't save reports if it's from Compare page
+    // (frontend can send ?save=false or include save:false in body)
+    if (req.query.save === "false" || reportData.save === false) {
+      return res.status(200).json({
+        success: true,
+        message: "Comparison only — not saving to database",
+      });
+    }
+
+    // 3️⃣ Prevent duplicate PDF saves by filename
+    if (reportData.filename) {
+      const existing = await Report.findOne({ filename: reportData.filename });
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          message: "File already exists, not saving again",
+          report: existing,
+        });
+      }
+    }
+
+    // ✅ Validate required fields
     if (!reportData.summary) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Summary is required" 
+      return res.status(400).json({
+        success: false,
+        error: "Summary is required",
       });
     }
 
     const newReport = new Report(reportData);
     await newReport.save();
 
-    res.json({ 
-      success: true, 
-      message: "Report saved successfully", 
-      report: newReport 
+    res.json({
+      success: true,
+      message: "Report saved successfully",
+      report: newReport,
     });
   } catch (err) {
     console.error("❌ Error saving report:", err);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: "Failed to save report",
-      details: err.message 
+      details: err.message,
     });
   }
 });

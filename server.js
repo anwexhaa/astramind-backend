@@ -12,6 +12,7 @@ import chatRoute from "./routes/chatRoute.js";
 import pluginRoute from "./routes/pluginRoute.js";
 import recallRoute from "./routes/recallRoute.js";
 import compareRoute from "./routes/compareRoute.js";
+import uploadRoute from "./routes/uploadRoute.js";
 
 
 
@@ -33,15 +34,16 @@ app.use(express.json());
 app.use("/api/visualize", visualizeRoute);
 app.use("/api/reports", reportRoute);
 app.use("/api/chat", chatRoute);
-app.use("/plugin", pluginRoute);
+app.use("/api/plugin", pluginRoute);
 app.use("/api/recall", recallRoute);
 app.use("/api/compare", compareRoute);
+app.use("/api/upload", uploadRoute);
 
 // ✅ Initialize Gemini safely
 let model;
 try {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   console.log("✅ Gemini initialized successfully");
 } catch (error) {
   console.error("❌ Failed to initialize Gemini:", error);
