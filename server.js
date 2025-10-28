@@ -11,6 +11,8 @@ import Report from "./models/report.js";
 import chatRoute from "./routes/chatRoute.js";
 import pluginRoute from "./routes/pluginRoute.js";
 import recallRoute from "./routes/recallRoute.js";
+import compareRoute from "./routes/compareRoute.js";
+
 
 
 const require = createRequire(import.meta.url);
@@ -33,6 +35,7 @@ app.use("/api/reports", reportRoute);
 app.use("/api/chat", chatRoute);
 app.use("/plugin", pluginRoute);
 app.use("/api/recall", recallRoute);
+app.use("/api/compare", compareRoute);
 
 // ✅ Initialize Gemini safely
 let model;

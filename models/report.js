@@ -1,7 +1,7 @@
-// models/Report.js
 import mongoose from "mongoose";
 
 const reportSchema = new mongoose.Schema({
+  filename: { type: String, required: true }, // ✅ helps identify uploads
   summary: String,
   financial_highlights: Object,
   market_analysis: String,
