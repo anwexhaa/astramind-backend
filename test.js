@@ -13,7 +13,8 @@ if (!fs.existsSync(pdfPath)) {
 const form = new FormData();
 form.append("file", fs.createReadStream(pdfPath)); // matches backend's upload.single("file")
 
-const URL = "http://localhost:3001/analyze";
+const URL = `${process.env.NEXT_PUBLIC_BACKEND_URL}/analyze`
+;
 
 (async () => {
   try {

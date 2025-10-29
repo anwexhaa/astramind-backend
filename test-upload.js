@@ -5,7 +5,8 @@ import fetch from "node-fetch";
 const form = new FormData();
 form.append("file", fs.createReadStream("C:/Users/Anwesha Das/Downloads/sample-local-pdf.pdf"));
 
-fetch("http://localhost:3001/analyze", { method: "POST", body: form })
+fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/analyze`
+, { method: "POST", body: form })
   .then(res => res.text())
   .then(console.log)
   .catch(console.error);

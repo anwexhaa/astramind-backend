@@ -3,7 +3,8 @@ import fetch from "node-fetch";
 
 export const getStockData = async (symbol) => {
   try {
-    const response = await fetch(`http://localhost:3001/plugin/stock/${symbol}`);
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/plugin/stock/${symbol}`
+);
     const result = await response.json();
     if (result.success) return result.data;
     return null;
