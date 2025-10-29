@@ -13,8 +13,7 @@ import pluginRoute from "./routes/pluginRoute.js";
 import recallRoute from "./routes/recallRoute.js";
 import compareRoute from "./routes/compareRoute.js";
 import uploadRoute from "./routes/uploadRoute.js";
-
-
+import authRoute from "./routes/authRoute.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -38,6 +37,7 @@ app.use("/api/plugin", pluginRoute);
 app.use("/api/recall", recallRoute);
 app.use("/api/compare", compareRoute);
 app.use("/api/upload", uploadRoute);
+app.use("/api/auth", authRoute);
 
 // ✅ Initialize Gemini safely
 let model;
@@ -95,14 +95,12 @@ function safeParse(jsonStr) {
   }
 }
 
-// ✅ /analyze endpoint with AUTO-SAVE + Trend Builder
+// ✅ /analyze endpoint with AUTO-SAVE + user linking
 app.post("/analyze", (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res
-          .status(400)
-          .json({ error: "File too large. Max 10 MB allowed." });
+        return res.status(400).json({ error: "File too large. Max 10 MB allowed." });
       }
       return res.status(400).json({ error: err.message });
     }
@@ -147,8 +145,7 @@ app.post("/analyze", (req, res) => {
       const fundingVal = parseFinancialNumber(financials.funding);
       const profitVal = parseFinancialNumber(financials.profit_margin);
 
-      // ✅ === 🧩 TREND BUILDER (NEW)
-      // Generate dynamic trend data to visualize growth across years
+      // ✅ Trend Builder
       const trendLabels = ["2020", "2021", "2022", "2023", "2024"];
       const revenueTrend = trendLabels.map((_, i) =>
         revenueVal ? Math.round(revenueVal * (0.7 + i * 0.1)) : 50 + i * 10
@@ -165,9 +162,7 @@ app.post("/analyze", (req, res) => {
         funding: fundingVal,
         profit_margin: profitVal,
       };
-      // ✅ === END TREND BUILDER
 
-      // ✅ Visual hints
       const riskLevel =
         (market.risks?.length || 0) >= 3
           ? "high"
@@ -182,7 +177,7 @@ app.post("/analyze", (req, res) => {
           ? "#FBBF24"
           : "#34D399";
 
-      // === AI-based investment score
+      // === AI-based score
       const scorePrompt = `
       You are a senior financial analyst. Based on the following data, give an overall investment score (0–100):
 
@@ -219,9 +214,21 @@ app.post("/analyze", (req, res) => {
         pdf_info: pdfData ? pdfData.info : null,
       };
 
-      // 🆕 Auto-save to DB
+      // ✅ Auto-save to DB with Firebase user link (FIXED BELOW)
       try {
+        let userId = req.body.userId;
+        const userEmail = req.body.userEmail || "unknown@example.com";
+        const filename = req.file ? req.file.originalname : "Uploaded Report";
+
+        // 🩹 FIX: Prevent "Cast to ObjectId failed" by setting null if not a real MongoId
+        if (!userId || userId === "anonymous" || userId.length < 12) {
+          userId = null;
+        }
+
         const reportData = {
+          filename,
+          userId,
+          userEmail,
           summary: analysis.summary,
           financial_highlights: analysis.financial_highlights,
           market_analysis: analysis.market_analysis,
@@ -233,8 +240,8 @@ app.post("/analyze", (req, res) => {
           pdf_pages: analysis.pdf_pages,
         };
 
-        const savedReport = await Report(reportData).save();
-        console.log(`✅ Report auto-saved with ID: ${savedReport._id}`);
+        const savedReport = await Report.create(reportData);
+        console.log(`✅ Report auto-saved for ${userEmail}: ${savedReport._id}`);
 
         res.json({
           ...analysis,
@@ -256,6 +263,4 @@ app.post("/analyze", (req, res) => {
 });
 
 connectDB();
-app.listen(PORT, () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));

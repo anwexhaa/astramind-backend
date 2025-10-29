@@ -1,33 +1,43 @@
 import express from "express";
 import Report from "../models/report.js";
+import User from "../models/user.js";
 
 const router = express.Router();
 
-// ✅ GET all saved reports (newest first, with pagination)
+/* ============================================================
+   ✅ GET all saved reports for a specific user (newest first)
+   ============================================================ */
 router.get("/", async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing user email",
+      });
+    }
 
-    const reports = await Report.find()
-      .sort({ created_at: -1 }) // Newest first
-      .skip(skip)
-      .limit(limit)
-      .select("-__v"); // Exclude version field
+    // ✅ Case-insensitive email match (fixes "no reports found" issue)
+    const user = await User.findOne({
+      email: { $regex: new RegExp(`^${email}$`, "i") },
+    });
 
-    const totalReports = await Report.countDocuments();
-    const totalPages = Math.ceil(totalReports / limit);
+    if (!user) {
+      console.warn("⚠️ No user found for email:", email);
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    const reports = await Report.find({ userEmail: email })
+  .sort({ created_at: -1 })
+  .select("-__v");
+
 
     res.json({
       success: true,
       reports,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalReports,
-        reportsPerPage: limit,
-      },
     });
   } catch (err) {
     console.error("❌ Error fetching reports:", err);
@@ -38,7 +48,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ GET single report by ID
+/* ===============================================
+   ✅ GET single report by ID
+   =============================================== */
 router.get("/:id", async (req, res) => {
   try {
     const report = await Report.findById(req.params.id).select("-__v");
@@ -60,7 +72,9 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// ✅ DELETE report by ID
+/* ===============================================
+   ✅ DELETE report by ID
+   =============================================== */
 router.delete("/:id", async (req, res) => {
   try {
     const report = await Report.findByIdAndDelete(req.params.id);
@@ -71,6 +85,12 @@ router.delete("/:id", async (req, res) => {
         error: "Report not found",
       });
     }
+
+    // Remove from user's list
+    await User.updateOne(
+      { _id: report.userId },
+      { $pull: { reports: report._id } }
+    );
 
     res.json({
       success: true,
@@ -86,13 +106,36 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-// ✅ POST new report (manual save - kept for backward compatibility)
+/* ===============================================
+   ✅ POST new report — tied to a specific user
+   =============================================== */
 router.post("/", async (req, res) => {
   try {
-    const reportData = req.body;
+    const { userEmail, firebaseUID, ...reportData } = req.body;
 
-    // 2️⃣ Don't save reports if it's from Compare page
-    // (frontend can send ?save=false or include save:false in body)
+    if (!userEmail && !firebaseUID) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing user identifier (email or firebaseUID)",
+      });
+    }
+
+    // ✅ Case-insensitive user lookup (by email or UID)
+    const user = await User.findOne({
+      $or: [
+        { email: { $regex: new RegExp(`^${userEmail}$`, "i") } },
+        { firebaseUID },
+      ],
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // ✅ Skip saving if this is a compare-only request
     if (req.query.save === "false" || reportData.save === false) {
       return res.status(200).json({
         success: true,
@@ -100,19 +143,22 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 3️⃣ Prevent duplicate PDF saves by filename
+    // ✅ Prevent duplicate saves for same file & user
     if (reportData.filename) {
-      const existing = await Report.findOne({ filename: reportData.filename });
+      const existing = await Report.findOne({
+        filename: reportData.filename,
+        userId: user._id,
+      });
       if (existing) {
         return res.status(200).json({
           success: true,
-          message: "File already exists, not saving again",
+          message: "File already exists for this user",
           report: existing,
         });
       }
     }
 
-    // ✅ Validate required fields
+    // ✅ Validate essential fields
     if (!reportData.summary) {
       return res.status(400).json({
         success: false,
@@ -120,8 +166,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const newReport = new Report(reportData);
+    // ✅ Create and save report
+    const newReport = new Report({
+      ...reportData,
+      userId: user._id,
+      userEmail: user.email.toLowerCase(),
+    });
+
     await newReport.save();
+
+    // ✅ Add to user's report list
+    user.reports.push(newReport._id);
+    await user.save();
 
     res.json({
       success: true,
