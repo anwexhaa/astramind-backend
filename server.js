@@ -6,7 +6,8 @@ import { createRequire } from "module";
 import { model } from "./utils/gemini.js";
 import visualizeRoute from "./routes/visualizeRoute.js";
 import reportRoute from "./routes/reportRoute.js";
-import { connectDB } from "./config/db.js";
+import mongoose from "mongoose";
+import { connectDB, lastDbError } from "./config/db.js";
 import Report from "./models/report.js";
 import chatRoute from "./routes/chatRoute.js";
 import pluginRoute from "./routes/pluginRoute.js";
@@ -31,6 +32,16 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+// Public health check: is the database reachable, and if not, why
+app.get("/api/health", (req, res) => {
+  const states = ["disconnected", "connected", "connecting", "disconnecting"];
+  const reason = lastDbError?.reason?.type || lastDbError?.message || null;
+  res.json({
+    db: states[mongoose.connection.readyState] || "unknown",
+    dbError: lastDbError ? { name: lastDbError.name, reason: String(reason).slice(0, 200) } : null,
+  });
+});
+
 // Public: no user data (market data and chart helpers)
 app.use("/api/visualize", visualizeRoute);
 app.use("/api/plugin", pluginRoute);
