@@ -5,7 +5,8 @@ import User from "../models/user.js";
 // Verifying an ID token only needs the project ID: firebase-admin checks the
 // signature against Google's public keys, so no service-account secret is stored.
 if (!getApps().length) {
-  initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
+  // The project ID is public (it ships in the frontend bundle), so it has a default.
+  initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID || "astramind-4307b" });
 }
 
 async function findOrCreateUser(uid, email) {
