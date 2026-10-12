@@ -14,6 +14,7 @@ import recallRoute from "./routes/recallRoute.js";
 import compareRoute from "./routes/compareRoute.js";
 import uploadRoute from "./routes/uploadRoute.js";
 import authRoute from "./routes/authRoute.js";
+import { requireAuth } from "./middleware/requireAuth.js";
 
 const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
@@ -30,14 +31,17 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+// Public: no user data (market data and chart helpers)
 app.use("/api/visualize", visualizeRoute);
-app.use("/api/reports", reportRoute);
-app.use("/api/chat", chatRoute);
 app.use("/api/plugin", pluginRoute);
-app.use("/api/recall", recallRoute);
-app.use("/api/compare", compareRoute);
-app.use("/api/upload", uploadRoute);
-app.use("/api/auth", authRoute);
+
+// Signed-in only: identity comes from the verified Firebase ID token
+app.use("/api/reports", requireAuth, reportRoute);
+app.use("/api/chat", requireAuth, chatRoute);
+app.use("/api/recall", requireAuth, recallRoute);
+app.use("/api/compare", requireAuth, compareRoute);
+app.use("/api/upload", requireAuth, uploadRoute);
+app.use("/api/auth", requireAuth, authRoute);
 
 // ✅ Initialize Gemini safely
 let model;
@@ -96,7 +100,7 @@ function safeParse(jsonStr) {
 }
 
 // ✅ /analyze endpoint with AUTO-SAVE + user linking
-app.post("/analyze", (req, res) => {
+app.post("/analyze", requireAuth, (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) {
       if (err.code === "LIMIT_FILE_SIZE") {
@@ -216,14 +220,10 @@ app.post("/analyze", (req, res) => {
 
       // ✅ Auto-save to DB with Firebase user link (FIXED BELOW)
       try {
-        let userId = req.body.userId;
-        const userEmail = req.body.userEmail || "unknown@example.com";
+        // Owner comes from the verified token, never from the form body
+        const userId = String(req.dbUser._id);
+        const userEmail = req.dbUser.email;
         const filename = req.file ? req.file.originalname : "Uploaded Report";
-
-        // 🩹 FIX: Prevent "Cast to ObjectId failed" by setting null if not a real MongoId
-        if (!userId || userId === "anonymous" || userId.length < 12) {
-          userId = null;
-        }
 
         const reportData = {
           filename,

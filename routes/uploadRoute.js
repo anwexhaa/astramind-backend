@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import { createRequire } from "module";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Report from "../models/report.js";
-import User from "../models/user.js";
+import { ownedBy } from "../utils/ownership.js";
 
 dotenv.config();
 const require = createRequire(import.meta.url);
@@ -27,42 +27,12 @@ async function askGemini(prompt) {
 // ✅ POST /api/upload
 router.post("/", upload.single("pdf"), async (req, res) => {
   try {
-    const { userEmail, firebaseUID, name } = req.body;
-
     if (!req.file) {
       return res.status(400).json({ success: false, error: "No file uploaded" });
     }
 
-    // ✅ Step 1: Find or create the user
-    let user;
-    if (firebaseUID || userEmail) {
-      user = await User.findOne({
-        $or: [{ firebaseUID }, { email: userEmail }],
-      });
-
-      if (!user) {
-        user = new User({
-          firebaseUID: firebaseUID || `guest_${Date.now()}`,
-          email: userEmail || `guest_${Date.now()}@anon.com`,
-          name: name || "Unnamed User",
-          reports: [],
-        });
-        await user.save();
-        console.log("✅ Created new MongoDB user:", user.email);
-      } else {
-        console.log("ℹ️ Existing MongoDB user synced:", user.email);
-      }
-    } else {
-      // fallback safety
-      user = new User({
-        firebaseUID: `guest_${Date.now()}`,
-        email: `guest_${Date.now()}@anon.com`,
-        name: "Guest User",
-        reports: [],
-      });
-      await user.save();
-      console.log("⚠️ Created guest user as no user data was provided");
-    }
+    // ✅ Step 1: The user comes from the verified token (requireAuth)
+    const user = req.dbUser;
 
     // ✅ Step 2: Parse PDF
     const pdfData = await pdf(req.file.buffer);
@@ -86,7 +56,7 @@ router.post("/", upload.single("pdf"), async (req, res) => {
     // ✅ Step 4: Prevent duplicate report filenames per user
     const existing = await Report.findOne({
       filename: req.file.originalname,
-      userId: user._id,
+      ...ownedBy(user),
     });
 
     if (existing) {
@@ -102,7 +72,7 @@ router.post("/", upload.single("pdf"), async (req, res) => {
       filename: req.file.originalname,
       summary,
       pdf_pages: pdfData.numpages,
-      userId: user._id, // ✅ correct ObjectId
+      userId: String(user._id),
       userEmail: user.email,
     });
 

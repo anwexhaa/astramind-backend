@@ -1,6 +1,7 @@
 // routes/chatRoute.js
 import express from "express";
 import Report from "../models/report.js";
+import { ownedBy } from "../utils/ownership.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 
@@ -49,9 +50,9 @@ User: "${query}"
     // 🏦 Otherwise, go financial analysis mode
     let reports;
     if (Array.isArray(reportIds) && reportIds.length > 0) {
-      reports = await Report.find({ _id: { $in: reportIds } });
+      reports = await Report.find({ _id: { $in: reportIds }, ...ownedBy(req.dbUser) });
     } else {
-      reports = await Report.find().sort({ created_at: -1 }).limit(3);
+      reports = await Report.find(ownedBy(req.dbUser)).sort({ created_at: -1 }).limit(3);
     }
 
     if (reports.length === 0)

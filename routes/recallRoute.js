@@ -1,12 +1,16 @@
 import express from "express";
 import Report from "../models/report.js";
+import { ownedBy } from "../utils/ownership.js";
 
 const router = express.Router();
 
-// 🧠 Get all saved reports (summary view)
+// 🧠 Get the signed-in user's saved reports (summary view)
 router.get("/", async (req, res) => {
   try {
-    const reports = await Report.find({}, "summary overall_score created_at");
+    const reports = await Report.find(
+      ownedBy(req.dbUser),
+      "summary overall_score created_at"
+    );
     res.json({ success: true, reports });
   } catch (err) {
     console.error("Recall fetch error:", err);
@@ -14,10 +18,10 @@ router.get("/", async (req, res) => {
   }
 });
 
-// 🔍 Get a single report by ID
+// 🔍 Get a single report by ID (owner only)
 router.get("/:id", async (req, res) => {
   try {
-    const report = await Report.findById(req.params.id);
+    const report = await Report.findOne({ _id: req.params.id, ...ownedBy(req.dbUser) });
     if (!report)
       return res.status(404).json({ success: false, error: "Report not found" });
     res.json({ success: true, report });
@@ -27,12 +31,12 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// 🧩 Compare two reports
+// 🧩 Compare two of the user's reports
 router.get("/compare/:id1/:id2", async (req, res) => {
   try {
     const [r1, r2] = await Promise.all([
-      Report.findById(req.params.id1),
-      Report.findById(req.params.id2)
+      Report.findOne({ _id: req.params.id1, ...ownedBy(req.dbUser) }),
+      Report.findOne({ _id: req.params.id2, ...ownedBy(req.dbUser) }),
     ]);
     if (!r1 || !r2)
       return res.status(404).json({ success: false, error: "One or both reports not found" });

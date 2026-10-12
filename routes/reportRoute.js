@@ -1,39 +1,18 @@
 import express from "express";
 import Report from "../models/report.js";
 import User from "../models/user.js";
+import { ownedBy } from "../utils/ownership.js";
 
 const router = express.Router();
 
 /* ============================================================
-   ✅ GET all saved reports for a specific user (newest first)
+   ✅ GET the signed-in user's saved reports (newest first)
    ============================================================ */
 router.get("/", async (req, res) => {
   try {
-    const { email } = req.query;
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing user email",
-      });
-    }
-
-    // ✅ Case-insensitive email match (fixes "no reports found" issue)
-    const user = await User.findOne({
-      email: { $regex: new RegExp(`^${email}$`, "i") },
-    });
-
-    if (!user) {
-      console.warn("⚠️ No user found for email:", email);
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    const reports = await Report.find({ userEmail: email })
-  .sort({ created_at: -1 })
-  .select("-__v");
-
+    const reports = await Report.find(ownedBy(req.dbUser))
+      .sort({ created_at: -1 })
+      .select("-__v");
 
     res.json({
       success: true,
@@ -49,12 +28,16 @@ router.get("/", async (req, res) => {
 });
 
 /* ===============================================
-   ✅ GET single report by ID
+   ✅ GET single report by ID (owner only)
    =============================================== */
 router.get("/:id", async (req, res) => {
   try {
-    const report = await Report.findById(req.params.id).select("-__v");
+    const report = await Report.findOne({
+      _id: req.params.id,
+      ...ownedBy(req.dbUser),
+    }).select("-__v");
 
+    // 404 rather than 403, so ids of other users' reports are not confirmed
     if (!report) {
       return res.status(404).json({
         success: false,
@@ -73,11 +56,14 @@ router.get("/:id", async (req, res) => {
 });
 
 /* ===============================================
-   ✅ DELETE report by ID
+   ✅ DELETE report by ID (owner only)
    =============================================== */
 router.delete("/:id", async (req, res) => {
   try {
-    const report = await Report.findByIdAndDelete(req.params.id);
+    const report = await Report.findOneAndDelete({
+      _id: req.params.id,
+      ...ownedBy(req.dbUser),
+    });
 
     if (!report) {
       return res.status(404).json({
@@ -88,7 +74,7 @@ router.delete("/:id", async (req, res) => {
 
     // Remove from user's list
     await User.updateOne(
-      { _id: report.userId },
+      { _id: req.dbUser._id },
       { $pull: { reports: report._id } }
     );
 
@@ -107,33 +93,13 @@ router.delete("/:id", async (req, res) => {
 });
 
 /* ===============================================
-   ✅ POST new report — tied to a specific user
+   ✅ POST new report for the signed-in user
    =============================================== */
 router.post("/", async (req, res) => {
   try {
-    const { userEmail, firebaseUID, ...reportData } = req.body;
-
-    if (!userEmail && !firebaseUID) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing user identifier (email or firebaseUID)",
-      });
-    }
-
-    // ✅ Case-insensitive user lookup (by email or UID)
-    const user = await User.findOne({
-      $or: [
-        { email: { $regex: new RegExp(`^${userEmail}$`, "i") } },
-        { firebaseUID },
-      ],
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
+    // Identity comes from the verified token; ignore any sent in the body
+    const { userEmail, firebaseUID, userId, ...reportData } = req.body;
+    const user = req.dbUser;
 
     // ✅ Skip saving if this is a compare-only request
     if (req.query.save === "false" || reportData.save === false) {
@@ -147,7 +113,7 @@ router.post("/", async (req, res) => {
     if (reportData.filename) {
       const existing = await Report.findOne({
         filename: reportData.filename,
-        userId: user._id,
+        ...ownedBy(user),
       });
       if (existing) {
         return res.status(200).json({
@@ -169,8 +135,8 @@ router.post("/", async (req, res) => {
     // ✅ Create and save report
     const newReport = new Report({
       ...reportData,
-      userId: user._id,
-      userEmail: user.email.toLowerCase(),
+      userId: String(user._id),
+      userEmail: user.email,
     });
 
     await newReport.save();
