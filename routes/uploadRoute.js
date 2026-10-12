@@ -3,7 +3,7 @@ import express from "express";
 import multer from "multer";
 import dotenv from "dotenv";
 import { createRequire } from "module";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { model } from "../utils/gemini.js";
 import Report from "../models/report.js";
 import { ownedBy } from "../utils/ownership.js";
 
@@ -12,8 +12,6 @@ const require = createRequire(import.meta.url);
 const pdf = require("pdf-parse");
 
 const router = express.Router();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // ✅ Multer config
 const upload = multer({ storage: multer.memoryStorage() });

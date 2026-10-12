@@ -3,7 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
 import { createRequire } from "module";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { model } from "./utils/gemini.js";
 import visualizeRoute from "./routes/visualizeRoute.js";
 import reportRoute from "./routes/reportRoute.js";
 import { connectDB } from "./config/db.js";
@@ -43,16 +43,6 @@ app.use("/api/compare", requireAuth, compareRoute);
 app.use("/api/upload", requireAuth, uploadRoute);
 app.use("/api/auth", requireAuth, authRoute);
 
-// ✅ Initialize Gemini safely
-let model;
-try {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  console.log("✅ Gemini initialized successfully");
-} catch (error) {
-  console.error("❌ Failed to initialize Gemini:", error);
-  process.exit(1);
-}
 
 // ✅ File validation
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -124,19 +114,21 @@ app.post("/analyze", requireAuth, (req, res) => {
         return res.status(400).json({ error: "No PDF or text provided" });
       }
 
-      // === Gemini queries ===
-      const summaryRaw = await askGemini(
-        `Act as a financial analyst. Summarize this document briefly. Respond as JSON: {"summary": "..."}\n\n${text}`
-      );
-      const financialsRaw = await askGemini(
-        `Extract key financial data (revenue, funding, profit margin). Respond as JSON: {"revenue": "...", "funding": "...", "profit_margin": "..."}; use "N/A" if missing.\n\n${text}`
-      );
-      const marketRaw = await askGemini(
-        `Analyze market situation and list 2–3 investor risks. Respond as JSON: {"market_analysis": "...", "risks": ["...", "..."]}\n\n${text}`
-      );
-      const recommendationRaw = await askGemini(
-        `Give a one-line investment recommendation. Respond as JSON: {"recommendation": "..."}\n\n${text}`
-      );
+      // === Gemini queries (independent, so they run in parallel) ===
+      const [summaryRaw, financialsRaw, marketRaw, recommendationRaw] = await Promise.all([
+        askGemini(
+          `Act as a financial analyst. Summarize this document briefly. Respond as JSON: {"summary": "..."}\n\n${text}`
+        ),
+        askGemini(
+          `Extract key financial data (revenue, funding, profit margin). Respond as JSON: {"revenue": "...", "funding": "...", "profit_margin": "..."}; use "N/A" if missing.\n\n${text}`
+        ),
+        askGemini(
+          `Analyze market situation and list 2–3 investor risks. Respond as JSON: {"market_analysis": "...", "risks": ["...", "..."]}\n\n${text}`
+        ),
+        askGemini(
+          `Give a one-line investment recommendation. Respond as JSON: {"recommendation": "..."}\n\n${text}`
+        ),
+      ]);
 
       // === Parse responses safely ===
       const summary = safeParse(summaryRaw);

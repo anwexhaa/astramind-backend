@@ -2,16 +2,13 @@
 import express from "express";
 import Report from "../models/report.js";
 import { ownedBy } from "../utils/ownership.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { model } from "../utils/gemini.js";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const router = express.Router();
 
-// ✅ Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 router.post("/", async (req, res) => {
   try {
